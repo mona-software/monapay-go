@@ -35,6 +35,22 @@ func (r *KeysResource) Destroy(ctx context.Context, keyID string) (any, error) {
 	return r.client.request(ctx, http.MethodDelete, "/api/v1/client-keys/destroy/"+segment(keyID), nil, nil)
 }
 
+func (r *KeysResource) Reveal(ctx context.Context, keyID string, confirmation map[string]any) (any, error) {
+	return r.client.request(ctx, http.MethodPost, "/api/v1/client-keys/"+segment(keyID)+"/reveal", confirmation, nil)
+}
+
+func (r *KeysResource) Rotate(ctx context.Context, keyID string) (any, error) {
+	data, err := r.client.request(ctx, http.MethodPost, "/api/v1/client-keys/"+segment(keyID)+"/rotate", map[string]any{}, nil)
+	if err == nil {
+		if object, ok := data.(map[string]any); ok {
+			if secret, ok := object["client_secret"].(string); ok && secret != "" {
+				r.client.SetClientSecret(secret)
+			}
+		}
+	}
+	return data, err
+}
+
 type VirtualAccountsResource struct{ client *Client }
 
 func (r *VirtualAccountsResource) Register(ctx context.Context, body map[string]any) (any, error) {
@@ -61,6 +77,68 @@ type BankAccountsResource struct{ client *Client }
 
 func (r *BankAccountsResource) List(ctx context.Context) (any, error) {
 	return r.client.request(ctx, http.MethodGet, "/api/v1/client/bank-accounts", nil, nil)
+}
+
+type PaymentProfileResource struct{ client *Client }
+
+func (r *PaymentProfileResource) Get(ctx context.Context) (any, error) {
+	return r.client.request(ctx, http.MethodGet, "/api/v1/payment-profile", nil, nil)
+}
+
+func (r *PaymentProfileResource) Set(ctx context.Context, body map[string]any) (any, error) {
+	return r.client.request(ctx, http.MethodPut, "/api/v1/payment-profile", body, nil)
+}
+
+func (r *PaymentProfileResource) RotateReturnSecret(ctx context.Context) (any, error) {
+	return r.client.request(ctx, http.MethodPost, "/api/v1/payment-profile/rotate-return-secret", map[string]any{}, nil)
+}
+
+func (r *PaymentProfileResource) RevealReturnSecret(ctx context.Context, confirmation map[string]any) (any, error) {
+	return r.client.request(ctx, http.MethodPost, "/api/v1/payment-profile/reveal-return-secret", confirmation, nil)
+}
+
+type CheckoutOptions struct {
+	Status, OrderCode, FromDate, ToDate string
+	Page, Limit                         int
+}
+
+type CheckoutsResource struct{ client *Client }
+
+func (r *CheckoutsResource) Create(ctx context.Context, body map[string]any, key string) (any, error) {
+	key, err := idempotencyKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return r.client.requestWithHeaders(ctx, http.MethodPost, "/api/v1/checkouts", body, nil, http.Header{"Idempotency-Key": {key}})
+}
+
+func (r *CheckoutsResource) Get(ctx context.Context, checkoutID string) (any, error) {
+	return r.client.request(ctx, http.MethodGet, "/api/v1/checkouts/"+segment(checkoutID), nil, nil)
+}
+
+func (r *CheckoutsResource) List(ctx context.Context, options CheckoutOptions) (any, error) {
+	query := url.Values{}
+	values := map[string]string{"status": options.Status, "order_code": options.OrderCode, "from_date": options.FromDate, "to_date": options.ToDate}
+	for name, value := range values {
+		if value != "" {
+			query.Set(name, value)
+		}
+	}
+	if options.Page > 0 {
+		query.Set("page", fmt.Sprint(options.Page))
+	}
+	if options.Limit > 0 {
+		query.Set("limit", fmt.Sprint(options.Limit))
+	}
+	return r.client.request(ctx, http.MethodGet, "/api/v1/checkouts", nil, query)
+}
+
+func (r *CheckoutsResource) Cancel(ctx context.Context, checkoutID, key string) (any, error) {
+	key, err := idempotencyKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return r.client.requestWithHeaders(ctx, http.MethodPost, "/api/v1/checkouts/"+segment(checkoutID)+"/cancel", map[string]any{}, nil, http.Header{"Idempotency-Key": {key}})
 }
 
 type QRResource struct{ client *Client }

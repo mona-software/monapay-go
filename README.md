@@ -23,7 +23,7 @@ sandbox, err := client.Sandbox.CreateTransaction(context.Background(), map[strin
 ## Cài đặt
 
 ```bash
-go get github.com/themonagroup/monapay-go@v0.3.0
+go get github.com/themonagroup/monapay-go@v0.4.0
 ```
 
 ## Dùng nhanh
@@ -40,7 +40,20 @@ profile, err := client.Me(context.Background())
 hooks, err := client.Webhooks.List(context.Background())
 ```
 
-Các resource: `Keys`, `BankAccounts`, `VA` (đăng ký + hai bước OTP), `QR`, `Transactions`, `Webhooks`, `WebhookLogs`, `Sandbox`, `EmailConfigs`, `EmailLogs`, `EmailSuppressions`. Client cache Bearer token theo hạn, lấy lại đúng một lần khi gặp HTTP 401 và tự gắn `X-Client-Secret` cho POST/PUT/DELETE.
+Các resource: `Keys`, `BankAccounts`, `PaymentProfile`, `Checkouts`, `VA` (đăng ký + hai bước OTP), `QR`, `Transactions`, `Webhooks`, `WebhookLogs`, `Sandbox`, `EmailConfigs`, `EmailLogs`, `EmailSuppressions`. Client cache Bearer token theo hạn, lấy lại đúng một lần khi gặp HTTP 401 và tự gắn `X-Client-Secret` cho POST/PUT/DELETE.
+
+## Trang thanh toán (hosted checkout)
+
+```go
+checkout, err := client.Checkouts.Create(ctx, map[string]any{"amount": 250000, "order_code": "DH10234", "return_url": "https://shop.vn/payment/return"}, "")
+if err != nil { log.Fatal(err) }
+http.Redirect(w, r, checkout.(map[string]any)["checkout_url"].(string), http.StatusFound)
+if event.Type == "CHECKOUT_PAID" {
+    fulfillOnce(event.Data["order_code"])
+}
+```
+
+SDK tự sinh `Idempotency-Key` cho `Create` và `Cancel`; truyền đối số key cuối khi anh chị cần dùng key riêng. Nguồn sự thật để giao hàng là webhook `CHECKOUT_PAID` hoặc kết quả `Get`, không phải redirect trình duyệt.
 
 Đọc giao dịch mới kể từ mốc đã lưu:
 

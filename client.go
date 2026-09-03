@@ -3,6 +3,8 @@ package monapay
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +54,8 @@ type Client struct {
 	Keys              *KeysResource
 	VA                *VirtualAccountsResource
 	BankAccounts      *BankAccountsResource
+	PaymentProfile    *PaymentProfileResource
+	Checkouts         *CheckoutsResource
 	QR                *QRResource
 	Transactions      *TransactionsResource
 	Webhooks          *WebhooksResource
@@ -90,6 +94,8 @@ func NewClient(config Config) (*Client, error) {
 	c.Keys = &KeysResource{client: c}
 	c.VA = &VirtualAccountsResource{client: c}
 	c.BankAccounts = &BankAccountsResource{client: c}
+	c.PaymentProfile = &PaymentProfileResource{client: c}
+	c.Checkouts = &CheckoutsResource{client: c}
 	c.QR = &QRResource{client: c}
 	c.Transactions = &TransactionsResource{client: c}
 	c.Webhooks = &WebhooksResource{client: c}
@@ -168,11 +174,15 @@ func (c *Client) login(ctx context.Context) error {
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body any, query url.Values) (any, error) {
+	return c.requestWithHeaders(ctx, method, path, body, query, nil)
+}
+
+func (c *Client) requestWithHeaders(ctx context.Context, method, path string, body any, query url.Values, headers http.Header) (any, error) {
 	if err := c.login(ctx); err != nil {
 		return nil, err
 	}
 	token, secret := c.getAuth()
-	data, err := c.send(ctx, method, path, body, query, token, secret)
+	data, err := c.send(ctx, method, path, body, query, token, secret, headers)
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusUnauthorized {
 		return data, err
@@ -189,10 +199,10 @@ func (c *Client) request(ctx context.Context, method, path string, body any, que
 		return nil, err
 	}
 	token, secret = c.getAuth()
-	return c.send(ctx, method, path, body, query, token, secret)
+	return c.send(ctx, method, path, body, query, token, secret, headers)
 }
 
-func (c *Client) send(ctx context.Context, method, path string, body any, query url.Values, token, secret string) (any, error) {
+func (c *Client) send(ctx context.Context, method, path string, body any, query url.Values, token, secret string, customHeaders ...http.Header) (any, error) {
 	endpoint := c.baseURL + path
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
@@ -218,6 +228,13 @@ func (c *Client) send(ctx context.Context, method, path string, body any, query 
 	}
 	if token != "" && method != http.MethodGet && secret != "" {
 		req.Header.Set("X-Client-Secret", secret)
+	}
+	if len(customHeaders) > 0 {
+		for name, values := range customHeaders[0] {
+			for _, value := range values {
+				req.Header.Add(name, value)
+			}
+		}
 	}
 	response, err := c.httpClient.Do(req)
 	if err != nil {
@@ -254,6 +271,20 @@ func (c *Client) send(ctx context.Context, method, path string, body any, query 
 }
 
 func segment(value string) string { return url.PathEscape(value) }
+
+func idempotencyKey(value string) (string, error) {
+	if value != "" {
+		return value, nil
+	}
+	var bytes [16]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		return "", fmt.Errorf("không tạo được Idempotency-Key: %w", err)
+	}
+	bytes[6] = (bytes[6] & 0x0f) | 0x40
+	bytes[8] = (bytes[8] & 0x3f) | 0x80
+	encoded := hex.EncodeToString(bytes[:])
+	return encoded[:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:], nil
+}
 
 func positive(value, fallback int) int {
 	if value > 0 {

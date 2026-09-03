@@ -75,6 +75,30 @@ func TestClientCachesTokenAndSendsHeaders(t *testing.T) {
 	}
 }
 
+func TestCreateCheckoutSendsIdempotencyAndClientSecret(t *testing.T) {
+	var checkoutRequest *http.Request
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		w := httptest.NewRecorder()
+		if r.URL.Path == "/api/v1/oauth/token" {
+			envelope(w, 200, map[string]any{"success": true, "data": map[string]any{"access_token": "token", "expires_in": 3600}})
+			return w.Result(), nil
+		}
+		checkoutRequest = r.Clone(r.Context())
+		envelope(w, 201, map[string]any{"success": true, "data": map[string]any{"checkout_url": "https://pay.monapay.vn/c/token"}})
+		return w.Result(), nil
+	})
+	client, _ := NewClient(Config{ClientID: "client-id", ClientSecret: "secret", BaseURL: "https://example.test", HTTPClient: &http.Client{Transport: transport}})
+	if _, err := client.Checkouts.Create(context.Background(), map[string]any{"amount": 250000}, "checkout-key"); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkoutRequest.Header.Get("Idempotency-Key"); got != "checkout-key" {
+		t.Fatalf("Idempotency-Key = %q", got)
+	}
+	if got := checkoutRequest.Header.Get("X-Client-Secret"); got != "secret" {
+		t.Fatalf("X-Client-Secret = %q", got)
+	}
+}
+
 func TestClientRefreshesOnceAfter401(t *testing.T) {
 	loginCount, meCount := 0, 0
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
