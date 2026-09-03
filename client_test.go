@@ -37,16 +37,21 @@ func TestClientCachesTokenAndSendsHeaders(t *testing.T) {
 		mu.Lock()
 		requests = append(requests, r.Clone(r.Context()))
 		mu.Unlock()
-		if r.URL.Path == "/api/v1/client/login" {
+		if r.URL.Path == "/api/v1/oauth/token" {
 			loginCount++
-			envelope(w, 200, map[string]any{"success": true, "data": map[string]any{"access_token": "token-1"}})
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["grant_type"] != "client_credentials" || body["client_id"] != "client-id" || body["client_secret"] != "secret" {
+				t.Errorf("oauth body = %#v", body)
+			}
+			envelope(w, 200, map[string]any{"success": true, "data": map[string]any{"access_token": "token-1", "expires_in": 3600}})
 			return w.Result(), nil
 		}
 		envelope(w, 200, map[string]any{"success": true, "data": map[string]any{"id": "ok"}})
 		return w.Result(), nil
 	})
 
-	client, err := NewClient(Config{Username: "user", Password: "pass", ClientSecret: "secret", BaseURL: "https://example.test", HTTPClient: &http.Client{Transport: transport}})
+	client, err := NewClient(Config{ClientID: "client-id", ClientSecret: "secret", BaseURL: "https://example.test", HTTPClient: &http.Client{Transport: transport}})
 	if err != nil {
 		t.Fatal(err)
 	}

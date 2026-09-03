@@ -9,15 +9,18 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const DefaultBaseURL = "https://api.monapay.vn"
 
 // Config configures a MONA Pay client.
 type Config struct {
+	ClientID     string
 	Username     string
 	Password     string
 	ClientSecret string
@@ -37,25 +40,33 @@ func (e *APIError) Error() string { return e.Msg }
 // Client is a synchronous, safe-for-concurrent-use MONA Pay API client.
 type Client struct {
 	baseURL      string
+	clientID     string
 	username     string
 	password     string
 	httpClient   *http.Client
 	mu           sync.Mutex
 	accessToken  string
+	tokenExpires time.Time
 	clientSecret string
 
-	Keys         *KeysResource
-	VA           *VirtualAccountsResource
-	BankAccounts *BankAccountsResource
-	QR           *QRResource
-	Transactions *TransactionsResource
-	Webhooks     *WebhooksResource
-	WebhookLogs  *WebhookLogsResource
+	Keys              *KeysResource
+	VA                *VirtualAccountsResource
+	BankAccounts      *BankAccountsResource
+	QR                *QRResource
+	Transactions      *TransactionsResource
+	Webhooks          *WebhooksResource
+	WebhookLogs       *WebhookLogsResource
+	Sandbox           *SandboxResource
+	EmailConfigs      *EmailConfigsResource
+	EmailLogs         *EmailLogsResource
+	EmailSuppressions *EmailSuppressionsResource
 }
 
 func NewClient(config Config) (*Client, error) {
-	if strings.TrimSpace(config.Username) == "" || strings.TrimSpace(config.Password) == "" {
-		return nil, errors.New("username và password là bắt buộc")
+	hasClientCredentials := strings.TrimSpace(config.ClientID) != "" && strings.TrimSpace(config.ClientSecret) != ""
+	hasPasswordCredentials := strings.TrimSpace(config.Username) != "" && strings.TrimSpace(config.Password) != ""
+	if !hasClientCredentials && !hasPasswordCredentials {
+		return nil, errors.New("cần client ID + client secret hoặc username + password; không dùng password cho AI agent vì sẽ gãy khi bật 2FA")
 	}
 	baseURL := strings.TrimRight(config.BaseURL, "/")
 	if baseURL == "" {
@@ -70,6 +81,7 @@ func NewClient(config Config) (*Client, error) {
 	}
 	c := &Client{
 		baseURL:      baseURL,
+		clientID:     config.ClientID,
 		username:     config.Username,
 		password:     config.Password,
 		clientSecret: config.ClientSecret,
@@ -82,7 +94,22 @@ func NewClient(config Config) (*Client, error) {
 	c.Transactions = &TransactionsResource{client: c}
 	c.Webhooks = &WebhooksResource{client: c}
 	c.WebhookLogs = &WebhookLogsResource{client: c}
+	c.Sandbox = &SandboxResource{client: c}
+	c.EmailConfigs = &EmailConfigsResource{client: c}
+	c.EmailLogs = &EmailLogsResource{client: c}
+	c.EmailSuppressions = &EmailSuppressionsResource{client: c}
 	return c, nil
+}
+
+// NewClientFromEnv creates a client from MONAPAY_CLIENT_ID,
+// MONAPAY_CLIENT_SECRET and optional MONAPAY_BASE_URL. Username/password are a
+// legacy fallback only and should not be used by AI agents because 2FA breaks it.
+func NewClientFromEnv() (*Client, error) {
+	return NewClient(Config{
+		ClientID: os.Getenv("MONAPAY_CLIENT_ID"), ClientSecret: os.Getenv("MONAPAY_CLIENT_SECRET"),
+		Username: os.Getenv("MONAPAY_USERNAME"), Password: os.Getenv("MONAPAY_PASSWORD"),
+		BaseURL: os.Getenv("MONAPAY_BASE_URL"),
+	})
 }
 
 func (c *Client) Me(ctx context.Context) (any, error) {
@@ -104,13 +131,17 @@ func (c *Client) getAuth() (string, string) {
 func (c *Client) login(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.accessToken != "" {
+	if c.accessToken != "" && time.Now().Before(c.tokenExpires) {
 		return nil
 	}
-	data, err := c.send(ctx, http.MethodPost, "/api/v1/client/login", map[string]any{
-		"username": c.username,
-		"password": c.password,
-	}, nil, "", "")
+	usingClientCredentials := c.clientID != "" && c.clientSecret != ""
+	path := "/api/v1/client/login"
+	body := map[string]any{"username": c.username, "password": c.password}
+	if usingClientCredentials {
+		path = "/api/v1/oauth/token"
+		body = map[string]any{"grant_type": "client_credentials", "client_id": c.clientID, "client_secret": c.clientSecret}
+	}
+	data, err := c.send(ctx, http.MethodPost, path, body, nil, "", "")
 	if err != nil {
 		return err
 	}
@@ -123,6 +154,16 @@ func (c *Client) login(ctx context.Context) error {
 		return &APIError{Msg: "Response đăng nhập không có access_token", Body: data}
 	}
 	c.accessToken = token
+	expiresIn := 86400
+	if usingClientCredentials {
+		expiresIn = 3600
+	}
+	expiresIn = intValue(object["expires_in"], expiresIn)
+	refreshIn := time.Duration(expiresIn)*time.Second - time.Minute
+	if refreshIn < 0 {
+		refreshIn = 0
+	}
+	c.tokenExpires = time.Now().Add(refreshIn)
 	return nil
 }
 
@@ -141,6 +182,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, que
 	c.mu.Lock()
 	if c.accessToken == token {
 		c.accessToken = ""
+		c.tokenExpires = time.Time{}
 	}
 	c.mu.Unlock()
 	if err := c.login(ctx); err != nil {

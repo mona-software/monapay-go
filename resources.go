@@ -235,3 +235,83 @@ func (r *WebhookLogsResource) List(ctx context.Context, options WebhookLogOption
 func (r *WebhookLogsResource) Stats(ctx context.Context, options WebhookLogOptions) (any, error) {
 	return r.client.request(ctx, http.MethodGet, "/api/v1/webhook-logs/stats", nil, webhookLogQuery(options))
 }
+
+type SandboxResource struct{ client *Client }
+
+func (r *SandboxResource) CreateTransaction(ctx context.Context, body map[string]any) (any, error) {
+	return r.client.request(ctx, http.MethodPost, "/api/v1/sandbox/transactions", body, nil)
+}
+
+type EmailConfigsResource struct{ client *Client }
+
+func (r *EmailConfigsResource) List(ctx context.Context) (any, error) {
+	return r.client.request(ctx, http.MethodGet, "/api/v1/email-configs", nil, nil)
+}
+func (r *EmailConfigsResource) Create(ctx context.Context, body map[string]any) (any, error) {
+	return r.client.request(ctx, http.MethodPost, "/api/v1/email-configs", body, nil)
+}
+func (r *EmailConfigsResource) Get(ctx context.Context, configID string) (any, error) {
+	return r.client.request(ctx, http.MethodGet, "/api/v1/email-configs/"+segment(configID), nil, nil)
+}
+func (r *EmailConfigsResource) Update(ctx context.Context, configID string, body map[string]any) (any, error) {
+	return r.client.request(ctx, http.MethodPut, "/api/v1/email-configs/"+segment(configID), body, nil)
+}
+func (r *EmailConfigsResource) Remove(ctx context.Context, configID string) (any, error) {
+	return r.client.request(ctx, http.MethodDelete, "/api/v1/email-configs/"+segment(configID), nil, nil)
+}
+func (r *EmailConfigsResource) Verify(ctx context.Context, configID string, body map[string]any) (any, error) {
+	return r.client.request(ctx, http.MethodPost, "/api/v1/email-configs/"+segment(configID)+"/verify", body, nil)
+}
+func (r *EmailConfigsResource) ResendVerification(ctx context.Context, configID, email string) (any, error) {
+	return r.client.request(ctx, http.MethodPost, "/api/v1/email-configs/"+segment(configID)+"/resend-verification", map[string]any{"email": email}, nil)
+}
+func (r *EmailConfigsResource) Test(ctx context.Context, configID string) (any, error) {
+	return r.client.request(ctx, http.MethodPost, "/api/v1/email-configs/"+segment(configID)+"/test", map[string]any{}, nil)
+}
+
+type EmailLogOptions struct {
+	ConfigID, Status, EventType, FromDate, ToDate string
+	Page, Limit                                   int
+}
+
+func emailLogQuery(options EmailLogOptions) url.Values {
+	query := url.Values{}
+	values := map[string]string{"config_id": options.ConfigID, "status": options.Status, "event_type": options.EventType, "from_date": options.FromDate, "to_date": options.ToDate}
+	for key, value := range values {
+		if value != "" {
+			query.Set(key, value)
+		}
+	}
+	if options.Page > 0 {
+		query.Set("page", fmt.Sprint(options.Page))
+	}
+	if options.Limit > 0 {
+		query.Set("limit", fmt.Sprint(options.Limit))
+	}
+	return query
+}
+
+type EmailLogsResource struct{ client *Client }
+
+func (r *EmailLogsResource) List(ctx context.Context, options EmailLogOptions) (any, error) {
+	return r.client.request(ctx, http.MethodGet, "/api/v1/email-logs", nil, emailLogQuery(options))
+}
+func (r *EmailLogsResource) Stats(ctx context.Context, options EmailLogOptions) (any, error) {
+	query := url.Values{}
+	if options.FromDate != "" {
+		query.Set("from_date", options.FromDate)
+	}
+	if options.ToDate != "" {
+		query.Set("to_date", options.ToDate)
+	}
+	return r.client.request(ctx, http.MethodGet, "/api/v1/email-logs/stats", nil, query)
+}
+
+type EmailSuppressionsResource struct{ client *Client }
+
+func (r *EmailSuppressionsResource) List(ctx context.Context) (any, error) {
+	return r.client.request(ctx, http.MethodGet, "/api/v1/email-suppressions", nil, nil)
+}
+func (r *EmailSuppressionsResource) Remove(ctx context.Context, email string) (any, error) {
+	return r.client.request(ctx, http.MethodDelete, "/api/v1/email-suppressions/"+segment(email), nil, nil)
+}

@@ -1,11 +1,29 @@
 # MONA Pay SDK for Go
 
-SDK Go 1.21+, zero-dependency cho MONA Pay — cổng thanh toán và API ngân hàng của The MONA Group. Tiền chuyển thẳng vào tài khoản doanh nghiệp; SDK hỗ trợ VA, VietQR, webhook và Telegram.
+SDK Go 1.21+, zero-dependency cho MONA Pay, cổng thanh toán và API ngân hàng của The MONA Group. Tiền chuyển thẳng vào tài khoản doanh nghiệp; SDK hỗ trợ VA, VietQR, webhook và Telegram.
+
+## Xác thực cho AI agent
+
+```bash
+export MONAPAY_CLIENT_ID="client-id"
+export MONAPAY_CLIENT_SECRET="client-secret"
+export MONAPAY_BASE_URL="https://api.monapay.vn"
+```
+
+```go
+client, err := monapay.NewClientFromEnv()
+if err != nil { log.Fatal(err) }
+profile, err := client.Me(context.Background())
+qr, err := client.QR.Generate(context.Background(), qrBody)
+sandbox, err := client.Sandbox.CreateTransaction(context.Background(), map[string]any{"virtual_account_number": "MONA123", "amount": 10000, "description": "AI test"})
+```
+
+`NewClientFromEnv` dùng client credentials, cache token tới gần hạn và tự lấy lại token một lần khi gặp HTTP 401. Username/password chỉ là fallback tương thích cũ, không dùng cho AI agent vì sẽ gãy khi bật 2FA.
 
 ## Cài đặt
 
 ```bash
-go get github.com/themonagroup/monapay-go
+go get github.com/themonagroup/monapay-go@v0.3.0
 ```
 
 ## Dùng nhanh
@@ -22,7 +40,7 @@ profile, err := client.Me(context.Background())
 hooks, err := client.Webhooks.List(context.Background())
 ```
 
-Các resource: `Keys`, `BankAccounts`, `VA` (đăng ký + hai bước OTP), `QR`, `Transactions`, `Webhooks`, `WebhookLogs`. Client tự đăng nhập, cache Bearer token, đăng nhập lại đúng một lần khi gặp HTTP 401 và tự gắn `X-Client-Secret` cho POST/PUT/DELETE.
+Các resource: `Keys`, `BankAccounts`, `VA` (đăng ký + hai bước OTP), `QR`, `Transactions`, `Webhooks`, `WebhookLogs`, `Sandbox`, `EmailConfigs`, `EmailLogs`, `EmailSuppressions`. Client cache Bearer token theo hạn, lấy lại đúng một lần khi gặp HTTP 401 và tự gắn `X-Client-Secret` cho POST/PUT/DELETE.
 
 Đọc giao dịch mới kể từ mốc đã lưu:
 
