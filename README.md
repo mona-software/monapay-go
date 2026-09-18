@@ -1,6 +1,6 @@
 # MONA Pay SDK for Go
 
-SDK Go 1.21+, zero-dependency cho MONA Pay, cổng thanh toán và API ngân hàng của The MONA Group. Tiền chuyển thẳng vào tài khoản doanh nghiệp; SDK hỗ trợ VA, VietQR, webhook và Telegram.
+SDK Go 1.21+, zero-dependency cho MONA Pay, API ngân hàng và dịch vụ xác nhận thanh toán tự động của The MONA Group. Tiền chuyển thẳng vào tài khoản doanh nghiệp; SDK hỗ trợ VA, VietQR, webhook và Telegram.
 
 ## Xác thực cho AI agent
 
