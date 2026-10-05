@@ -1,3 +1,3 @@
-module github.com/themonagroup/monapay-go
+module github.com/mona-software/monapay-go
 
 go 1.21

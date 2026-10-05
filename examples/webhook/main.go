@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 
-	monapay "github.com/themonagroup/monapay-go"
+	monapay "github.com/mona-software/monapay-go"
 )
 
 func main() {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- Đổi đường dẫn module thành `github.com/mona-software/monapay-go`. Đường cũ `github.com/themonagroup/monapay-go` không tải được nữa vì org cũ đã bị GitHub khoá. Code đang dùng phải đổi import và chạy `go get github.com/mona-software/monapay-go`.
+
 ## 0.4.0
 
 - Thêm `PaymentProfile`, `Checkouts`, xem lại/xoay secret hồ sơ và API key.

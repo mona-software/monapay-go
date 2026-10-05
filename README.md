@@ -23,7 +23,7 @@ sandbox, err := client.Sandbox.CreateTransaction(context.Background(), map[strin
 ## Cài đặt
 
 ```bash
-go get github.com/themonagroup/monapay-go@v0.4.0
+go get github.com/mona-software/monapay-go
 ```
 
 ## Dùng nhanh
@@ -87,3 +87,7 @@ Docs: https://monapay.vn/docs · Hotline 1900 636 648 · info@themona.global. MO
 Zero-dependency Go 1.21+ SDK for MONA Pay. It includes automatic login/token caching, one 401 refresh, virtual accounts and both OTP steps, VietQR, paginated transaction iteration with a client-side `SinceID` checkpoint, webhook configuration/logs/retry, and constant-time webhook verification. See the example and API above.
 
 MIT © The MONA Group.
+
+**MONA Pay is part of MONA Cloud by The MONA Group.**
+
+**MONA Pay thuộc bộ MONA Cloud của The MONA Group.**
