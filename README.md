@@ -1,93 +1,160 @@
-# MONA Pay SDK for Go
+# monapay-go
 
-SDK Go 1.21+, zero-dependency cho MONA Pay, API ngân hàng và dịch vụ xác nhận thanh toán tự động của The MONA Group. Tiền chuyển thẳng vào tài khoản doanh nghiệp; SDK hỗ trợ VA, VietQR, webhook và Telegram.
+Go SDK for the MONA Pay API: create checkout links and VietQR codes, manage virtual accounts, webhooks and email notifications, and verify signed webhooks.
 
-## Xác thực cho AI agent
+Requires Go 1.21+. Standard library only. The client is safe for concurrent use.
 
-```bash
-export MONAPAY_CLIENT_ID="client-id"
-export MONAPAY_CLIENT_SECRET="client-secret"
-export MONAPAY_BASE_URL="https://api.monapay.vn"
-```
-
-```go
-client, err := monapay.NewClientFromEnv()
-if err != nil { log.Fatal(err) }
-profile, err := client.Me(context.Background())
-qr, err := client.QR.Generate(context.Background(), qrBody)
-sandbox, err := client.Sandbox.CreateTransaction(context.Background(), map[string]any{"virtual_account_number": "MONA123", "amount": 10000, "description": "AI test"})
-```
-
-`NewClientFromEnv` dùng client credentials, cache token tới gần hạn và tự lấy lại token một lần khi gặp HTTP 401. Username/password chỉ là fallback tương thích cũ, không dùng cho AI agent vì sẽ gãy khi bật 2FA.
-
-## Cài đặt
+## Install
 
 ```bash
 go get github.com/mona-software/monapay-go
 ```
 
-## Dùng nhanh
+## Quick start
 
 ```go
-client, err := monapay.NewClient(monapay.Config{
-    Username: os.Getenv("MONA_USERNAME"),
-    Password: os.Getenv("MONA_PASSWORD"),
-    ClientSecret: os.Getenv("MONA_CLIENT_SECRET"),
-})
-if err != nil { log.Fatal(err) }
+package main
 
-profile, err := client.Me(context.Background())
-hooks, err := client.Webhooks.List(context.Background())
-```
+import (
+	"context"
+	"fmt"
+	"log"
 
-Các resource: `Keys`, `BankAccounts`, `PaymentProfile`, `Checkouts`, `VA` (đăng ký + hai bước OTP), `QR`, `Transactions`, `Webhooks`, `WebhookLogs`, `Sandbox`, `EmailConfigs`, `EmailLogs`, `EmailSuppressions`. Client cache Bearer token theo hạn, lấy lại đúng một lần khi gặp HTTP 401 và tự gắn `X-Client-Secret` cho POST/PUT/DELETE.
+	monapay "github.com/mona-software/monapay-go"
+)
 
-## Trang thanh toán (hosted checkout)
-
-```go
-checkout, err := client.Checkouts.Create(ctx, map[string]any{"amount": 250000, "order_code": "DH10234", "return_url": "https://shop.vn/payment/return"}, "")
-if err != nil { log.Fatal(err) }
-http.Redirect(w, r, checkout.(map[string]any)["checkout_url"].(string), http.StatusFound)
-if event.Type == "CHECKOUT_PAID" {
-    fulfillOnce(event.Data["order_code"])
+func main() {
+	client, err := monapay.NewClientFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	checkout, err := client.Checkouts.Create(context.Background(), map[string]any{
+		"amount":     250000,
+		"order_code": "DH10234",
+		"return_url": "https://shop.example/payment/return",
+	}, "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(checkout.(map[string]any)["checkout_url"])
 }
 ```
 
-SDK tự sinh `Idempotency-Key` cho `Create` và `Cancel`; truyền đối số key cuối khi anh chị cần dùng key riêng. Nguồn sự thật để giao hàng là webhook `CHECKOUT_PAID` hoặc kết quả `Get`, không phải redirect trình duyệt.
+## Usage
 
-Đọc giao dịch mới kể từ mốc đã lưu:
+### Client
+
+```go
+// From environment variables (see Configuration)
+client, err := monapay.NewClientFromEnv()
+
+// Or explicitly
+client, err := monapay.NewClient(monapay.Config{
+	ClientID:     os.Getenv("MONAPAY_CLIENT_ID"),
+	ClientSecret: os.Getenv("MONAPAY_CLIENT_SECRET"),
+	// BaseURL and HTTPClient are optional
+})
+
+profile, err := client.Me(ctx)
+```
+
+- Client credentials (`ClientID` + `ClientSecret`) are the recommended login. `Username`/`Password` is a legacy fallback and does not work for accounts with 2FA enabled.
+- The Bearer token is cached until one minute before `expires_in`. A request that fails with HTTP 401 refreshes the token and is retried once.
+- `X-Client-Secret` is sent on non-GET requests when a client secret is set.
+- Methods return `(any, error)`; error responses are returned as `*monapay.APIError` with `Status` and `Body`.
+
+### Resources
+
+| Field | Methods |
+| --- | --- |
+| `Keys` | `Generate`, `List`, `Destroy`, `Reveal`, `Rotate` |
+| `BankAccounts` | `List` |
+| `VA` | `Register`, `Verify`, `RegisterNotification`, `VerifyNotification`, `List` |
+| `PaymentProfile` | `Get`, `Set`, `RotateReturnSecret`, `RevealReturnSecret` |
+| `Checkouts` | `Create`, `Get`, `List`, `Cancel` |
+| `QR` | `Generate`, `Cancel` |
+| `Transactions` | `List`, `Iterate`, `Retry` |
+| `Sandbox` | `CreateTransaction` |
+| `Webhooks` | `List`, `Create`, `Update`, `Remove`, `Test` |
+| `WebhookLogs` | `List`, `Stats` |
+| `EmailConfigs` | `List`, `Create`, `Get`, `Update`, `Remove`, `Verify`, `ResendVerification`, `Test` |
+| `EmailLogs` | `List`, `Stats` |
+| `EmailSuppressions` | `List`, `Remove` |
+
+### Hosted checkout
+
+`Checkouts.Create` and `Checkouts.Cancel` take an idempotency key as the last argument. Pass `""` to let the SDK generate one.
+
+Fulfil orders from the `CHECKOUT_PAID` webhook or from `Checkouts.Get`, not from the browser redirect.
+
+### Sandbox
+
+```go
+tx, err := client.Sandbox.CreateTransaction(ctx, map[string]any{
+	"virtual_account_number": "MONA123",
+	"amount":                 10000,
+	"description":            "Sandbox test",
+})
+```
+
+### Transactions
 
 ```go
 it := client.Transactions.Iterate(ctx, "MONA000001", monapay.TransactionOptions{
-    Limit: 100,
-    SinceID: "FT26240001234",
+	Limit:   100,
+	SinceID: "FT26240001234",
 })
 for it.Next() {
-    transaction := it.Value().(map[string]any)
-    // Lưu transaction_code làm idempotency key.
+	transaction := it.Value().(map[string]any)
+	// Use transaction_code as the idempotency key when storing.
+	_ = transaction
 }
-if err := it.Err(); err != nil { log.Fatal(err) }
+if err := it.Err(); err != nil {
+	log.Fatal(err)
+}
 ```
 
-`SinceID` là helper phía SDK: iterator dừng trước item có `id` hoặc `transaction_code` trùng mốc. SDK không gửi query `since_id`, vì API hiện chưa hỗ trợ tham số đó.
+`SinceID` is handled by the SDK: the iterator stops before the item whose `id` or `transaction_code` matches. It is not sent to the API.
 
-Xác thực webhook trên raw bytes trước khi parse JSON:
+### Webhooks
+
+Verify the raw request bytes before parsing JSON. `VerifyWebhook` takes the `X-Mona-Timestamp` and `X-Mona-Signature` header values and an optional tolerance in seconds (default 300).
 
 ```go
-result, err := monapay.VerifyWebhook(rawBody, timestampHeader, signatureHeader, secret)
-if err != nil || !result.OK { /* trả 401 */ }
+rawBody, _ := io.ReadAll(r.Body)
+result, err := monapay.VerifyWebhook(rawBody,
+	r.Header.Get("X-Mona-Timestamp"), r.Header.Get("X-Mona-Signature"), secret)
+if err != nil || !result.OK {
+	http.Error(w, "invalid signature", http.StatusUnauthorized)
+	return
+}
+payload, _ := result.Payload.(map[string]any)
 ```
 
-Ví dụ server đầy đủ: `examples/webhook/main.go`. Chạy test offline bằng `go test ./...`.
+A complete server is in `examples/webhook/main.go`.
 
-Docs: https://monapay.vn/docs · Hotline 1900 636 648 · info@themona.global. MONA Pay miễn phí hoàn toàn.
+## Configuration
 
-## English
+`NewClientFromEnv` reads:
 
-Zero-dependency Go 1.21+ SDK for MONA Pay. It includes automatic login/token caching, one 401 refresh, virtual accounts and both OTP steps, VietQR, paginated transaction iteration with a client-side `SinceID` checkpoint, webhook configuration/logs/retry, and constant-time webhook verification. See the example and API above.
+| Variable | Purpose |
+| --- | --- |
+| `MONAPAY_CLIENT_ID`, `MONAPAY_CLIENT_SECRET` | API key credentials (recommended) |
+| `MONAPAY_USERNAME`, `MONAPAY_PASSWORD` | Legacy password login; does not work for accounts with 2FA enabled |
+| `MONAPAY_BASE_URL` | API base URL, defaults to `https://api.monapay.vn` |
 
-MIT © The MONA Group.
+The webhook example reads `MONA_WEBHOOK_SECRET`.
+
+Documentation: https://monapay.vn/docs
+
+## Development
+
+```bash
+go test ./...
+```
+
+## License
+
+MIT
 
 **MONA Pay is part of MONA Cloud by The MONA Group.**
-
-**MONA Pay thuộc bộ MONA Cloud của The MONA Group.**
